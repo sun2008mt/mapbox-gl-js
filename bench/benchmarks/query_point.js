@@ -1,94 +1,63 @@
-'use strict';
+// @flow
 
-var Evented = require('../../js/util/evented');
-var util = require('../../js/util/util');
-var createMap = require('../lib/create_map');
+import Benchmark from '../lib/benchmark';
+import createMap from '../lib/create_map';
+import type Map from '../../src/ui/map';
 
-var width = 1024;
-var height = 768;
+const width = 1024;
+const height = 768;
 
-var zoomLevels = [];
-for (var i = 4; i < 19; i++) {
-    zoomLevels.push(i);
-}
-
-var queryPoints = [];
-var d = 20;
-for (var x = 0; x < d; x++) {
-    for (var y = 0; y < d; y++) {
-        queryPoints.push([
+const points = [];
+const d = 4;
+for (let x = 0; x < d; x++) {
+    for (let y = 0; y < d; y++) {
+        points.push([
             (x / d) * width,
             (y / d) * height
         ]);
     }
 }
 
-module.exports = function() {
-    var evented = util.extend({}, Evented);
+export default class QueryPoint extends Benchmark {
+    style: string;
+    locations: Array<Object>;
+    maps: Array<Map>;
 
-    var sum = 0;
-    var count = 0;
-
-    asyncSeries(zoomLevels.length, function(n, callback) {
-        var zoomLevel = zoomLevels[zoomLevels.length - n];
-        var map = createMap({
-            width: width,
-            height: height,
-            zoom: zoomLevel,
-            center: [-77.032194, 38.912753],
-            style: 'mapbox://styles/mapbox/streets-v9'
-        });
-        map.getContainer().style.display = 'none';
-
-        map.on('load', function() {
-
-            var zoomSum = 0;
-            var zoomCount = 0;
-            asyncSeries(queryPoints.length, function(n, callback) {
-                var queryPoint = queryPoints[queryPoints.length - n];
-                var start = performance.now();
-                map.queryRenderedFeatures(queryPoint, {});
-                var duration = performance.now() - start;
-                sum += duration;
-                count++;
-                zoomSum += duration;
-                zoomCount++;
-                callback();
-            }, function() {
-                map.remove();
-                evented.fire('log', {
-                    message: (zoomSum / zoomCount).toFixed(2) + ' ms at zoom ' + zoomLevel
-                });
-                callback();
-            });
-        });
-    }, done);
-
-
-    function done() {
-        var average = sum / count;
-        evented.fire('end', {
-            message: (average).toFixed(2) + ' ms',
-            score: average
-        });
+    constructor(style: string, locations: Array<Object>) {
+        super();
+        this.style = style;
+        this.locations = locations;
     }
-    setTimeout(function() {
-        evented.fire('log', {
-            message: 'loading assets',
-            color: 'dark'
-        });
-    }, 0);
 
-    return evented;
-};
+    setup(): Promise<void> {
+        return Promise.all(this.locations.map(location => {
+            return createMap({
+                zoom: location.zoom,
+                width,
+                height,
+                center: location.center,
+                style: this.style
+            });
+        }))
+            .then(maps => {
+                this.maps = maps;
+            })
+            .catch(error => {
+                console.error(error);
+            });
+    }
 
-function asyncSeries(times, work, callback) {
-    if (times > 0) {
-        work(times, function(err) {
-            if (err) callback(err);
-            else asyncSeries(times - 1, work, callback);
-        });
-    } else {
-        callback();
+    bench() {
+        for (const map of this.maps) {
+            for (const point of points) {
+                map.queryRenderedFeatures(point, {});
+            }
+        }
+    }
+
+    teardown() {
+        for (const map of this.maps) {
+            map.remove();
+        }
     }
 }

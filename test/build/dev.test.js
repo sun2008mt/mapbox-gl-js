@@ -1,9 +1,8 @@
-'use strict';
+import {test} from '../util/test';
+import fs from 'fs';
 
-var test = require('tap').test;
-var fs = require('fs');
-
-test('dev build contains asserts', function(t) {
-    t.assert(fs.readFileSync('dist/mapbox-gl-dev.js', 'utf8').indexOf('assert(') !== -1);
+test('dev build contains asserts', (t) => {
+    t.assert(fs.readFileSync('dist/mapbox-gl-dev.js', 'utf8').indexOf('canary assert') !== -1);
+    t.assert(fs.readFileSync('dist/mapbox-gl-dev.js', 'utf8').indexOf('canary debug run') !== -1);
     t.end();
 });

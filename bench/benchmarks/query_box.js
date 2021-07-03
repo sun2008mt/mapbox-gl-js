@@ -1,84 +1,50 @@
-'use strict';
+// @flow
 
-var Evented = require('../../js/util/evented');
-var util = require('../../js/util/util');
-var createMap = require('../lib/create_map');
+import Benchmark from '../lib/benchmark';
+import createMap from '../lib/create_map';
+import type Map from '../../src/ui/map';
 
-var width = 1024;
-var height = 768;
+const width = 1024;
+const height = 768;
 
-var numSamples = 10;
+export default class QueryBox extends Benchmark {
+    style: string;
+    locations: Array<Object>;
+    maps: Array<Map>;
 
-var zoomLevels = [];
-for (var i = 4; i < 19; i++) {
-    zoomLevels.push(i);
-}
-
-module.exports = function() {
-    var evented = util.extend({}, Evented);
-
-    var sum = 0;
-    var count = 0;
-
-    asyncSeries(zoomLevels.length, function(n, callback) {
-        var zoomLevel = zoomLevels[zoomLevels.length - n];
-        var map = createMap({
-            width: width,
-            height: height,
-            zoom: zoomLevel,
-            center: [-77.032194, 38.912753],
-            style: 'mapbox://styles/mapbox/streets-v9'
-        });
-        map.getContainer().style.display = 'none';
-
-        map.on('load', function() {
-
-            var zoomSum = 0;
-            var zoomCount = 0;
-            asyncSeries(numSamples, function(n, callback) {
-                var start = performance.now();
-                map.queryRenderedFeatures({});
-                var duration = performance.now() - start;
-                sum += duration;
-                count++;
-                zoomSum += duration;
-                zoomCount++;
-                callback();
-            }, function() {
-                evented.fire('log', {
-                    message: (zoomSum / zoomCount).toFixed(2) + ' ms at zoom ' + zoomLevel
-                });
-                map.remove();
-                callback();
-            });
-        });
-    }, done);
-
-
-    function done() {
-        var average = sum / count;
-        evented.fire('end', {
-            message: (average).toFixed(2) + ' ms',
-            score: average
-        });
+    constructor(style: string, locations: Array<Object>) {
+        super();
+        this.style = style;
+        this.locations = locations;
     }
-    setTimeout(function() {
-        evented.fire('log', {
-            message: 'loading assets',
-            color: 'dark'
-        });
-    }, 0);
 
-    return evented;
-};
+    setup(): Promise<void> {
+        return Promise.all(this.locations.map(location => {
+            return createMap({
+                zoom: location.zoom,
+                width,
+                height,
+                center: location.center,
+                style: this.style
+            });
+        }))
+            .then(maps => {
+                this.maps = maps;
+            })
+            .catch(error => {
+                console.error(error);
+            });
+    }
 
-function asyncSeries(times, work, callback) {
-    if (times > 0) {
-        work(times, function(err) {
-            if (err) callback(err);
-            else asyncSeries(times - 1, work, callback);
-        });
-    } else {
-        callback();
+    bench() {
+        for (const map of this.maps) {
+            map.queryRenderedFeatures({});
+        }
+    }
+
+    teardown() {
+        for (const map of this.maps) {
+            map.remove();
+        }
     }
 }
